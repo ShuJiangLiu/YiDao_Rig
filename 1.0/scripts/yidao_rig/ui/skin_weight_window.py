@@ -107,8 +107,14 @@ if QtWidgets:
                     meshes = _selected_meshes()
                     if not meshes:
                         raise RuntimeError('请至少选择一个目标网格。')
-                    changed = import_weights(path, meshes=meshes)
-                self._set_status('导入完成：%d 个网格' % len(changed))
+                    changed, warnings = import_weights(path, meshes=meshes)
+                if warnings:
+                    self._set_status('导入完成：%d 个网格，存在额外影响骨骼' % len(changed))
+                    for warning in warnings:
+                        print('[YiDao Rig] ' + warning)
+                        cmds.warning(warning)
+                else:
+                    self._set_status('导入完成：%d 个网格' % len(changed))
             except Exception as exc:
                 self._set_status('导入失败：' + str(exc), error=True)
                 cmds.warning(str(exc))

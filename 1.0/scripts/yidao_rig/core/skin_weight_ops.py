@@ -2,8 +2,10 @@
 """Lossless-oriented skinCluster weight import/export using Maya API 2.0."""
 from __future__ import print_function
 
+import hashlib
 import json
 import os
+import struct
 
 try:
     import maya.cmds as cmds
@@ -61,11 +63,43 @@ def _weight_values(values):
     return [float(value) for value in values]
 
 
+def _compact_influence_names(influences):
+    """Store short names unless the scene contains duplicate joint names."""
+    stored = []
+    for full_name in influences:
+        short_name = _short(full_name)
+        candidates = cmds.ls(short_name, type='joint', long=True) or []
+        stored.append(short_name if len(candidates) == 1 else full_name)
+    return stored
+
+
+def _mesh_signature(mesh):
+    """Return a compact topology signature for vertex-index-safe imports."""
+    fn = om2.MFnMesh(_dag(mesh))
+    counts, connects = fn.getVertices()
+    digest = hashlib.sha1()
+    digest.update(struct.pack('<III', int(fn.numVertices),
+                              int(fn.numPolygons), int(fn.numEdges)))
+    digest.update(struct.pack('<%dI' % len(counts), *[int(v) for v in counts]))
+    digest.update(struct.pack('<%dI' % len(connects), *[int(v) for v in connects]))
+    return {
+        'vertexCount': int(fn.numVertices),
+        'faceCount': int(fn.numPolygons),
+        'edgeCount': int(fn.numEdges),
+        'topologyHash': digest.hexdigest(),
+    }
+
+
+def _mesh_name_is_unique(mesh):
+    return len(cmds.ls(_short(mesh), type='mesh', long=True) or []) == 1
+
+
 def _skin_data(mesh, cluster):
     skin_fn = oma2.MFnSkinCluster(_dependency(cluster))
     mesh_path = _dag(mesh)
     influences = skin_fn.influenceObjects()
     influence_names = [path.fullPathName() for path in influences]
+    stored_influence_names = _compact_influence_names(influence_names)
     components = om2.MFnSingleIndexedComponent()
     component = components.create(om2.MFn.kMeshVertComponent)
     vertex_count = om2.MFnMesh(mesh_path).numVertices
@@ -82,16 +116,24 @@ def _skin_data(mesh, cluster):
     except Exception:
         # Older Maya builds may not expose blend weights consistently.
         blend_values = []
-    return {
+    signature = _mesh_signature(mesh)
+    sparse_rows = []
+    for row in rows:
+        sparse_rows.append([[index, value] for index, value in enumerate(row)
+                            if float(value) != 0.0])
+    record = {
         'mesh': _short(mesh),
-        'meshPath': mesh,
         'skinCluster': cluster,
-        'influences': influence_names,
+        'influences': stored_influence_names,
         'influenceShortNames': [_short(name) for name in influence_names],
         'vertexCount': vertex_count,
-        'weights': rows,
+        'signature': signature,
+        'weights': {'encoding': 'sparse', 'rows': sparse_rows},
         'blendWeights': blend_values,
     }
+    if not _mesh_name_is_unique(mesh):
+        record['meshPath'] = mesh
+    return record
 
 
 def _safe_file_name(name):
@@ -117,7 +159,7 @@ def export_weights(path, meshes=None):
         filename = base + '.json'
         output = {
             'format': 'YiDaoRigSkinWeights',
-            'version': 1,
+            'version': 2,
             'precision': 'decimal-string',
             'mesh': record,
         }
@@ -180,21 +222,28 @@ def _resolve_influences(names, cluster=None):
     return result
 
 
-def _ensure_skin_cluster(mesh, stored_names):
+def _ensure_skin_cluster(mesh, stored_names, stored_cluster=None):
     cluster = _skin_cluster(mesh)
     if cluster:
         return cluster, _resolve_influences(stored_names, cluster)
     influences = _resolve_influences(stored_names)
     if not influences:
         raise RuntimeError('权重文件没有影响骨骼：%s' % mesh)
-    # Create a normally normalized skinCluster, then overwrite all vertex
-    # weights with the exact values from the file through setWeights.
-    # Let Maya assign the default skinCluster name. Never rename existing or
-    # newly-created history nodes as part of weight import.
-    cluster = cmds.skinCluster(influences, mesh,
-                               bindMethod=0, skinMethod=0, normalizeWeights=1,
-                               toSelectedBones=True)[0]
+    kwargs = dict(bindMethod=0, skinMethod=0, normalizeWeights=1,
+                  toSelectedBones=True)
+    # Preserve the exported skinCluster name when creating a missing cluster.
+    # Existing history is never renamed. Maya may suffix the name on collision.
+    if stored_cluster:
+        kwargs['name'] = stored_cluster
+    cluster = cmds.skinCluster(influences, mesh, **kwargs)[0]
     return cluster, influences
+
+
+def _extra_influences(cluster, stored_names):
+    stored_short = set(_short(name) for name in stored_names)
+    existing = _cluster_influences(cluster)
+    return [name for name in existing
+            if name not in stored_names and _short(name) not in stored_short]
 
 
 def _set_skin_data(record):
@@ -203,19 +252,46 @@ def _set_skin_data(record):
     if vertex_count != int(record['vertexCount']):
         raise RuntimeError('顶点数量不一致：%s（文件 %s，场景 %s）' %
                            (mesh, record['vertexCount'], vertex_count))
+    signature = record.get('signature')
+    if signature:
+        current = _mesh_signature(mesh)
+        for key in ('faceCount', 'edgeCount', 'topologyHash'):
+            if str(current.get(key)) != str(signature.get(key)):
+                raise RuntimeError('网格拓扑不一致：%s（%s）' % (mesh, key))
     stored_names = record['influences']
-    cluster, target_influences = _ensure_skin_cluster(mesh, stored_names)
+    cluster, target_influences = _ensure_skin_cluster(
+        mesh, stored_names, record.get('skinCluster'))
+    extra_influences = _extra_influences(cluster, stored_names)
     skin_fn = oma2.MFnSkinCluster(_dependency(cluster))
     all_existing = _cluster_influences(cluster)
     indices = om2.MIntArray([all_existing.index(name) for name in target_influences])
     components_fn = om2.MFnSingleIndexedComponent()
     component = components_fn.create(om2.MFn.kMeshVertComponent)
     components_fn.addElements(list(range(vertex_count)))
+    weight_data = record['weights']
+    if isinstance(weight_data, dict):
+        if weight_data.get('encoding') != 'sparse':
+            raise RuntimeError('不支持的权重编码：%s' % mesh)
+        sparse_rows = weight_data.get('rows', [])
+        if len(sparse_rows) != vertex_count:
+            raise RuntimeError('权重行数不一致：%s' % mesh)
+        dense_rows = []
+        for sparse_row in sparse_rows:
+            row = [0.0] * len(stored_names)
+            for pair in sparse_row:
+                if len(pair) != 2 or int(pair[0]) < 0 or int(pair[0]) >= len(row):
+                    raise RuntimeError('稀疏权重索引无效：%s' % mesh)
+                row[int(pair[0])] = float(pair[1])
+            dense_rows.append(row)
+    else:
+        dense_rows = []
+        for row in weight_data:
+            if len(row) != len(stored_names):
+                raise RuntimeError('权重列数不一致：%s' % mesh)
+            dense_rows.append(_weight_values(row))
     values = []
-    for row in record['weights']:
-        if len(row) != len(stored_names):
-            raise RuntimeError('权重列数不一致：%s' % mesh)
-        values.extend(_weight_values(row))
+    for row in dense_rows:
+        values.extend(row)
     skin_fn.setWeights(_dag(mesh), component, indices, om2.MDoubleArray(values), False)
     blend_weights = record.get('blendWeights') or []
     if blend_weights:
@@ -223,7 +299,7 @@ def _set_skin_data(record):
             raise RuntimeError('blendWeights 数量不一致：%s' % mesh)
         skin_fn.setBlendWeights(_dag(mesh), component,
                                 om2.MDoubleArray(_weight_values(blend_weights)))
-    return mesh
+    return mesh, extra_influences
 
 
 def _read_weight_records(path):
@@ -242,7 +318,9 @@ def _read_weight_records(path):
         if payload.get('format') != 'YiDaoRigSkinWeights':
             continue
         if 'mesh' in payload:
-            records.append(payload['mesh'])
+            record = dict(payload['mesh'])
+            record['_version'] = payload.get('version', 1)
+            records.append(record)
         else:
             records.extend(payload.get('meshes', []))
     if not records:
@@ -272,10 +350,28 @@ def import_weights(path, meshes=None):
             record['meshPath'] = mesh
             selected_records.append(record)
         records = selected_records
+    # Preflight every target before changing any weights. This prevents a
+    # multi-mesh import from partially completing when one target has extra
+    # influences that are not represented by the JSON file.
+    extra_errors = []
+    for record in records:
+        mesh = _resolve_mesh(record)
+        cluster = _skin_cluster(mesh)
+        if not cluster:
+            continue
+        extras = _extra_influences(cluster, record.get('influences', []))
+        if extras:
+            extra_errors.append('%s：目标 skinCluster 存在额外影响骨骼：%s' %
+                                (mesh, ', '.join(extras)))
+    if extra_errors:
+        raise RuntimeError('权重导入已拒绝：发现额外影响骨骼。\n' +
+                           '\n'.join(extra_errors))
+
     changed = []
     for record in records:
-        changed.append(_set_skin_data(record))
-    return changed
+        result = _set_skin_data(record)
+        changed.append(result[0] if isinstance(result, tuple) else result)
+    return changed, []
 
 
 def undo_chunk(label):
