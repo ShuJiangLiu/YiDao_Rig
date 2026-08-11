@@ -212,8 +212,9 @@ def _format_transform_values(values, tolerance):
     return tuple(rounded)
 
 
-def find_non_default_transforms(targets=None, tolerance=_TRANSFORM_TOLERANCE):
-    """Find selected transform nodes whose Translate/Rotate/Scale are non-default."""
+def find_non_default_transforms(targets=None, translate=True, rotate=True,
+                                scale=True, tolerance=_TRANSFORM_TOLERANCE):
+    """Find selected nodes with selected non-default Transform attributes."""
     if not cmds:
         raise RuntimeError('该工具必须在 Maya 中运行。')
     targets = targets or cmds.ls(selection=True, long=True, type='transform') or []
@@ -224,19 +225,19 @@ def find_non_default_transforms(targets=None, tolerance=_TRANSFORM_TOLERANCE):
     for node in targets:
         if not cmds.objExists(node):
             continue
-        translate = cmds.getAttr(node + '.translate')[0]
-        rotate = cmds.getAttr(node + '.rotate')[0]
-        scale = cmds.getAttr(node + '.scale')[0]
+        translate_value = cmds.getAttr(node + '.translate')[0]
+        rotate_value = cmds.getAttr(node + '.rotate')[0]
+        scale_value = cmds.getAttr(node + '.scale')[0]
         non_default = []
-        if _non_default(translate, (0.0, 0.0, 0.0), tolerance):
+        if translate and _non_default(translate_value, (0.0, 0.0, 0.0), tolerance):
             non_default.append('Translate=%s' %
-                               (_format_transform_values(translate, tolerance),))
-        if _non_default(rotate, (0.0, 0.0, 0.0), tolerance):
+                               (_format_transform_values(translate_value, tolerance),))
+        if rotate and _non_default(rotate_value, (0.0, 0.0, 0.0), tolerance):
             non_default.append('Rotate=%s' %
-                               (_format_transform_values(rotate, tolerance),))
-        if _non_default(scale, (1.0, 1.0, 1.0), tolerance):
+                               (_format_transform_values(rotate_value, tolerance),))
+        if scale and _non_default(scale_value, (1.0, 1.0, 1.0), tolerance):
             non_default.append('Scale=%s' %
-                               (_format_transform_values(scale, tolerance),))
+                               (_format_transform_values(scale_value, tolerance),))
         if non_default:
             offenders.append(node)
             details.append('%s：%s' % (node, ', '.join(non_default)))

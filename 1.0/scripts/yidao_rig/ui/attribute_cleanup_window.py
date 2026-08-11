@@ -68,8 +68,21 @@ if QtWidgets:
             button.clicked.connect(self._cleanup)
             root.addWidget(button)
 
+            scan_layout = QtWidgets.QHBoxLayout()
+            scan_layout.addWidget(QtWidgets.QLabel('筛查属性：'))
+            self.scan_translate_check = QtWidgets.QCheckBox('Translate')
+            self.scan_rotate_check = QtWidgets.QCheckBox('Rotate')
+            self.scan_scale_check = QtWidgets.QCheckBox('Scale')
+            self.scan_translate_check.setChecked(True)
+            self.scan_rotate_check.setChecked(True)
+            self.scan_scale_check.setChecked(True)
+            for widget in (self.scan_translate_check, self.scan_rotate_check,
+                           self.scan_scale_check):
+                scan_layout.addWidget(widget)
+            scan_layout.addStretch()
+            root.addLayout(scan_layout)
             scan_button = QtWidgets.QPushButton(
-                '筛查非默认 Transform，并选中异常对象')
+                '筛查选中属性的非默认值，并选中异常对象')
             scan_button.setMinimumHeight(34)
             scan_button.clicked.connect(self._scan)
             root.addWidget(scan_button)
@@ -86,7 +99,10 @@ if QtWidgets:
 
         def _scan(self):
             try:
-                offenders, details = find_non_default_transforms()
+                offenders, details = find_non_default_transforms(
+                    translate=self.scan_translate_check.isChecked(),
+                    rotate=self.scan_rotate_check.isChecked(),
+                    scale=self.scan_scale_check.isChecked())
                 if offenders:
                     self._set_status('筛查完成：选中 %d 个非默认对象' % len(offenders))
                     print('[YiDao Rig] 非默认 Transform 筛查结果：')
