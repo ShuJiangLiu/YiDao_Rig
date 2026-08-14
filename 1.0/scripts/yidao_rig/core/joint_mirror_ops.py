@@ -274,15 +274,20 @@ def apply_local_values(joint, translate, joint_orient, scale, rotate_order):
 # ----------------------------------------------------------------------
 
 def _list_joint_hierarchy(root):
-    """按父先子后顺序返回骨骼层级（只含 joint）"""
+    """按父先子后顺序返回完整DAG路径的骨骼层级。"""
     result = []
+    roots = cmds.ls(root, long=True, type='joint') or []
+    if not roots:
+        return result
 
     def walk(j):
-        result.append(j)
-        for c in (cmds.listRelatives(j, children=True, type='joint') or []):
-            walk(c)
+        long_j = (cmds.ls(j, long=True, type='joint') or [j])[0]
+        result.append(long_j)
+        for child in (cmds.listRelatives(long_j, children=True,
+                                         type='joint', fullPath=True) or []):
+            walk(child)
 
-    walk(root)
+    walk(roots[0])
     return result
 
 
@@ -310,7 +315,7 @@ def _copy_joint_attributes(src, dst):
 
 
 def _unique_joint_name(name):
-    """Always return a scene-unique mirrored-joint name."""
+    """Always return a scene-unique mirrored root-joint name."""
     if not cmds.objExists(name):
         return name
     index = 1
@@ -368,7 +373,8 @@ def mirror_joints(roots, plane='YZ', behavior=True,
             warnings.append('跳过（命名中找不到 "%s"）: %s' % (search, src))
             continue
 
-        src_parent = cmds.listRelatives(src, parent=True) or []
+        src_parent = cmds.listRelatives(src, parent=True, fullPath=True) or []
+        src_parent = [(cmds.ls(src_parent[0], long=True) or src_parent)[0]] if src_parent else []
         is_chain_root = not src_parent or src_parent[0] not in sources
         if is_chain_root:
             unique_name = _unique_joint_name(dst_name)
@@ -381,6 +387,9 @@ def mirror_joints(roots, plane='YZ', behavior=True,
         if not is_chain_root:
             source_parent = src_parent[0]
             create_parent = mapping.get(source_parent)
+            # The destination parent is newly created and uniquely named.
+            # Keep child names unchanged, matching Maya mirrorJoint behavior:
+            # only the mirrored chain root receives a numeric suffix.
         dst = cmds.createNode('joint', name=unique_name, parent=create_parent)
         if is_chain_root and unique_name != dst_name:
             warnings.append('目标根骨骼已存在，已创建为: %s' % unique_name)
@@ -393,16 +402,22 @@ def mirror_joints(roots, plane='YZ', behavior=True,
         dst = mapping.get(src)
         if dst is None:
             continue
-        src_parent = cmds.listRelatives(src, parent=True)
-        src_parent = src_parent[0] if src_parent else None
+        src_parent = cmds.listRelatives(src, parent=True, fullPath=True)
+        if src_parent:
+            src_parent = (cmds.ls(src_parent[0], long=True) or src_parent)[0]
+        else:
+            src_parent = None
 
         if src_parent in mapping:
-            dst_parent = mapping[src_parent]
-        else:
-            dst_parent = src_parent  # 层级根：保持原父节点
+            # Internal children were created with createNode(parent=...). Do
+            # not issue a second parent command: Maya can report the child as
+            # already parented when long/short DAG names are normalized.
+            continue
 
-        cur_parent = cmds.listRelatives(dst, parent=True)
-        cur_parent = cur_parent[0] if cur_parent else None
+        # Only a chain root may need to retain an external source parent.
+        dst_parent = src_parent
+        cur_parent = cmds.listRelatives(dst, parent=True, fullPath=True)
+        cur_parent = (cmds.ls(cur_parent[0], long=True) or cur_parent)[0] if cur_parent else None
         if cur_parent != dst_parent:
             if dst_parent:
                 cmds.parent(dst, dst_parent)
@@ -414,7 +429,7 @@ def mirror_joints(roots, plane='YZ', behavior=True,
         dst = mapping.get(src)
         if dst is None:
             continue
-        src_parent = cmds.listRelatives(src, parent=True)
+        src_parent = cmds.listRelatives(src, parent=True, fullPath=True)
         is_chain_root = not (src_parent and src_parent[0] in mapping)
         rot_order = cmds.getAttr(src + '.rotateOrder')
 
