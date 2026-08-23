@@ -52,6 +52,11 @@ def _show_attribute_cleanup(*args):
     yidao_rig.show_attribute_cleanup()
 
 
+def _show_attribute_connection(*args):
+    import yidao_rig
+    yidao_rig.show_attribute_connection()
+
+
 def _show_joint_match(*args):
     import yidao_rig
     yidao_rig.show_joint_match()
@@ -60,6 +65,16 @@ def _show_joint_match(*args):
 def _show_skin_weight_tool(*args):
     import yidao_rig
     yidao_rig.show_skin_weight_tool()
+
+
+def _show_select_weight_joints(*args):
+    import yidao_rig
+    yidao_rig.show_select_weight_joints()
+
+
+def _show_naming(*args):
+    import yidao_rig
+    yidao_rig.show_naming()
 
 
 def initializePlugin(mobject):
@@ -85,10 +100,18 @@ def initializePlugin(mobject):
                                    subMenu=True, tearOff=True)
     cmds.menuItem(label='Attribute Cleanup', parent=attribute_menu,
                   command=_show_attribute_cleanup)
+    cmds.menuItem(label='Attribute Connection', parent=attribute_menu,
+                  command=_show_attribute_connection)
     skin_menu = cmds.menuItem(label='Skin', parent=tools_menu,
                               subMenu=True, tearOff=True)
     cmds.menuItem(label='Skin Weight Import / Export', parent=skin_menu,
                   command=_show_skin_weight_tool)
+    cmds.menuItem(label='Select Weight Joints', parent=skin_menu,
+                  command=_show_select_weight_joints)
+    naming_menu = cmds.menuItem(label='Naming', parent=tools_menu,
+                                subMenu=True, tearOff=True)
+    cmds.menuItem(label='Naming Tool', parent=naming_menu,
+                  command=_show_naming)
     cmds.menuItem(divider=True, parent=MENU_NAME)
     developer_menu = cmds.menuItem(label='Developer', parent=MENU_NAME,
                                     subMenu=True, tearOff=True)

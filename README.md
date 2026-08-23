@@ -100,7 +100,10 @@ YiDao Rig > Tools > Joint > Joint Match
 Joint Match 仅通过骨骼短名称匹配，不再使用 Search / Replace。源、目标骨骼名称应保持一致，通过 UI 的“目标 Namespace”（例如 `charB`）指定目标骨骼链；留空则自动查找，若存在多个候选会警告跳过。
 YiDao Rig > Tools > Controller > Controller Tool
 YiDao Rig > Tools > Attribute > Attribute Cleanup
+YiDao Rig > Tools > Attribute > Attribute Connection
 YiDao Rig > Tools > Skin > Skin Weight Import / Export
+YiDao Rig > Tools > Skin > Select Weight Joints
+YiDao Rig > Tools > Naming > Naming Tool
 YiDao Rig > Developer > Reload All YiDao Rig Tools
 ```
 

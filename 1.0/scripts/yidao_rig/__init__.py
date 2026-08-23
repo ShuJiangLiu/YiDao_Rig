@@ -19,6 +19,11 @@ def show_attribute_cleanup():
     return attribute_cleanup_tool.run()
 
 
+def show_attribute_connection():
+    from .tools import attribute_connection_tool
+    return attribute_connection_tool.run()
+
+
 def show_joint_match():
     from .tools import joint_match_tool
     return joint_match_tool.run()
@@ -27,6 +32,16 @@ def show_joint_match():
 def show_skin_weight_tool():
     from .tools import skin_weight_tool
     return skin_weight_tool.run()
+
+
+def show_select_weight_joints():
+    from .tools import select_weight_joints_tool
+    return select_weight_joints_tool.run()
+
+
+def show_naming():
+    from .tools import naming_tool
+    return naming_tool.run()
 
 
 def reload_all_tools():
