@@ -81,7 +81,7 @@ if QtWidgets:
             self.hierarchy_check.setChecked(True)
             root.addWidget(self.hierarchy_check)
 
-            button = QtWidgets.QPushButton('镜像所选骨骼  Mirror Selected Joints')
+            button = QtWidgets.QPushButton('镜像所选骨骼')
             button.setMinimumHeight(38)
             button.clicked.connect(self._mirror)
             root.addWidget(button)

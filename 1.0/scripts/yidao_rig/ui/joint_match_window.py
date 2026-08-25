@@ -72,7 +72,7 @@ if QtWidgets:
             attrs_layout.addStretch()
             root.addWidget(attrs)
 
-            button = QtWidgets.QPushButton('匹配骨骼链  Match Joint Chain')
+            button = QtWidgets.QPushButton('匹配骨骼链')
             button.setMinimumHeight(38)
             button.clicked.connect(self._match)
             root.addWidget(button)

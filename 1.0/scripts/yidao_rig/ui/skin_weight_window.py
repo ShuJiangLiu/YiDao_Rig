@@ -8,7 +8,6 @@ from ..compat.qt_compat import (
 )
 from ..compat.maya_compat import cmds, maya_main_window
 from ..core.skin_weight_ops import export_weights, import_weights, undo_chunk, _selected_meshes
-from ..core.ui_state import setup_state
 
 WINDOW_OBJECT = 'yidaoSkinWeightWindow'
 _STYLE = '''
@@ -27,10 +26,9 @@ if QtWidgets:
             super().__init__(parent)
             self.setObjectName(WINDOW_OBJECT)
             self.setWindowTitle('Skin Weight Import / Export')
-            self.setMinimumSize(620, 270)
+            self.setMinimumSize(620, 210)
             self.setStyleSheet(_STYLE)
             self._build_ui()
-            self._save_ui_state = setup_state(self, 'skin_weight')
 
         def _build_ui(self):
             root = QtWidgets.QVBoxLayout(self)
@@ -41,16 +39,6 @@ if QtWidgets:
                 '导入时选择一个 JSON 文件或包含多个 JSON 文件的文件夹；没有 skinCluster 的目标会自动创建蒙皮。')
             info.setWordWrap(True)
             root.addWidget(info)
-
-            file_group = QtWidgets.QGroupBox('权重文件')
-            file_layout = QtWidgets.QHBoxLayout(file_group)
-            self.path_edit = QtWidgets.QLineEdit()
-            self.path_edit.setPlaceholderText('选择 .json 文件或权重文件夹')
-            browse = QtWidgets.QPushButton('浏览...')
-            browse.clicked.connect(self._browse)
-            file_layout.addWidget(self.path_edit)
-            file_layout.addWidget(browse)
-            root.addWidget(file_group)
 
             actions = QtWidgets.QHBoxLayout()
             export_button = QtWidgets.QPushButton('导出所选网格权重')
@@ -73,15 +61,9 @@ if QtWidgets:
             self.status.style().polish(self.status)
             self.status.setText(text)
 
-        def _browse(self):
-            path = QtWidgets.QFileDialog.getExistingDirectory(
-                self, '选择蒙皮权重文件夹', self.path_edit.text() or '')
-            if path:
-                self.path_edit.setText(path)
-
         def _export(self):
             path = QtWidgets.QFileDialog.getExistingDirectory(
-                self, '选择权重导出文件夹', self.path_edit.text() or '')
+                self, '选择权重导出文件夹', '')
             if not path:
                 return
             try:
@@ -89,17 +71,17 @@ if QtWidgets:
                 if not meshes:
                     raise RuntimeError('请至少选择一个网格。')
                 payload = export_weights(path, meshes=meshes)
-                self.path_edit.setText(path)
                 self._set_status('导出完成：%d 个 JSON 文件' % len(payload))
             except Exception as exc:
                 self._set_status('导出失败：' + str(exc), error=True)
                 cmds.warning(str(exc))
 
         def _import(self):
-            path = self.path_edit.text().strip()
+            path, _filter = QtWidgets.QFileDialog.getOpenFileName(
+                self, '选择权重 JSON 文件', '', 'JSON 文件 (*.json)')
             if not path:
-                self._browse()
-                path = self.path_edit.text().strip()
+                path = QtWidgets.QFileDialog.getExistingDirectory(
+                    self, '选择权重文件夹', '')
             if not path:
                 return
             try:
