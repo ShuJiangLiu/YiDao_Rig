@@ -7,6 +7,8 @@ try:
 except ImportError:
     cmds = None
 
+from ..compat.maya_compat import display_node
+
 
 def _short(node):
     return node.split('|')[-1]
@@ -105,17 +107,19 @@ def match_joints(roots, hierarchy=True, translation=True, rotation=True,
         target = _find_target_joints(target_name, target_namespace)
         if not target:
             warnings.append('找不到目标骨骼: %s（源: %s）' %
-                            (target_name, source))
+                            (target_name, display_node(source)))
             continue
         if len(target) > 1:
             warnings.append('目标名称不唯一，跳过: %s（候选: %s）' %
-                            (target_name, ', '.join(target)))
+                            (target_name, ', '.join(display_node(item)
+                                                     for item in target)))
             continue
         try:
             _match_one(source, target[0], translation, rotation, scale)
             matched.append((source, target[0]))
         except Exception as exc:
-            warnings.append('%s → %s：%s' % (source, target[0], exc))
+            warnings.append('%s → %s：%s' %
+                            (display_node(source), display_node(target[0]), exc))
     return matched, warnings
 
 
@@ -162,13 +166,15 @@ def match_joint_roots(source_root, target_root, hierarchy=True,
             warnings.append('目标缺少对应层级: %s' % ('/'.join(map(str, path)) or '<root>'))
             continue
         if _short(source) != _short(target):
-            warnings.append('名称不一致，跳过: %s → %s' % (_short(source), _short(target)))
+            warnings.append('名称不一致，跳过: %s → %s' %
+                            (display_node(source), display_node(target)))
             continue
         try:
             _match_one(source, target, translation, rotation, scale)
             matched.append((source, target))
         except Exception as exc:
-            warnings.append('%s → %s：%s' % (source, target, exc))
+            warnings.append('%s → %s：%s' %
+                            (display_node(source), display_node(target), exc))
     return matched, warnings
 
 

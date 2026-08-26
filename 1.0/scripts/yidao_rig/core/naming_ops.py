@@ -7,6 +7,8 @@ try:
 except ImportError:
     cmds = None
 
+from ..compat.maya_compat import display_node
+
 
 def _selected_transforms():
     selection = [node for node in
@@ -63,7 +65,7 @@ def _rename_with_temporary_names(nodes, final_names):
         temp_name = temporary[original]
         matches = cmds.ls(temp_name, long=True) or []
         if not matches:
-            raise RuntimeError('临时重命名对象丢失：%s' % original)
+            raise RuntimeError('临时重命名对象丢失：%s' % display_node(original))
         current = matches[0]
         renamed.append(cmds.rename(current, final_names[original]))
     return renamed
@@ -116,7 +118,8 @@ def rename_hierarchy_chain(base_name='', separator='_', start_index=0,
             raise RuntimeError('请先选择层级链的根节点。')
         root = selected[0]
     if cmds.nodeType(root) not in ('transform', 'joint'):
-        raise RuntimeError('选择的对象不是可重命名的层级节点：%s' % root)
+        raise RuntimeError('选择的对象不是可重命名的层级节点：%s' %
+                           display_node(root))
     nodes = [root]
     if include_children:
         nodes += _descendants(root)

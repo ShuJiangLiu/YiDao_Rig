@@ -36,7 +36,7 @@ if QtWidgets:
             root.setSpacing(8)
             info = QtWidgets.QLabel(
                 '可同时选择多个网格，每个模型分别导出为一个 JSON 文件。文件保存顶点权重和影响骨骼的精确小数值，\n'
-                '导入时选择一个 JSON 文件或包含多个 JSON 文件的文件夹；没有 skinCluster 的目标会自动创建蒙皮。')
+                '导入时选择包含多个 JSON 文件的文件夹；导入会临时解锁并恢复锁定状态，不会自动归一化权重。')
             info.setWordWrap(True)
             root.addWidget(info)
 
@@ -77,18 +77,24 @@ if QtWidgets:
                 cmds.warning(str(exc))
 
         def _import(self):
-            path, _filter = QtWidgets.QFileDialog.getOpenFileName(
-                self, '选择权重 JSON 文件', '', 'JSON 文件 (*.json)')
-            if not path:
-                path = QtWidgets.QFileDialog.getExistingDirectory(
-                    self, '选择权重文件夹', '')
+            try:
+                meshes = _selected_meshes()
+                if not meshes:
+                    raise RuntimeError('请先选择需要导入权重的模型。')
+            except Exception as exc:
+                self._set_status('导入失败：' + str(exc), error=True)
+                if cmds:
+                    cmds.warning(str(exc))
+                return
+
+            # Export creates one JSON file per mesh. Import uses the folder
+            # containing the exported JSON files.
+            path = QtWidgets.QFileDialog.getExistingDirectory(
+                self, '选择权重文件夹', '')
             if not path:
                 return
             try:
                 with undo_chunk('YiDao Skin Weight Import'):
-                    meshes = _selected_meshes()
-                    if not meshes:
-                        raise RuntimeError('请至少选择一个目标网格。')
                     changed, warnings = import_weights(path, meshes=meshes)
                 if warnings:
                     self._set_status('导入完成：%d 个网格，存在额外影响骨骼' % len(changed))
@@ -98,7 +104,11 @@ if QtWidgets:
                 else:
                     self._set_status('导入完成：%d 个网格' % len(changed))
             except Exception as exc:
-                self._set_status('导入失败：' + str(exc), error=True)
+                message = str(exc)
+                if message == '权重导入已拒绝：目标模型与 JSON 文件的影响骨骼不匹配。':
+                    self._set_status(message, error=True)
+                else:
+                    self._set_status('导入失败：' + message, error=True)
                 cmds.warning(str(exc))
 else:
     SkinWeightWindow = None

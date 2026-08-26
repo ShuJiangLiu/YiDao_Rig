@@ -7,6 +7,8 @@ try:
 except ImportError:
     cmds = None
 
+from ..compat.maya_compat import display_node, display_plug
+
 
 TRANSFORM_ATTRS = ('translate', 'rotate', 'scale')
 _TRANSFORM_PLUGS = tuple(
@@ -235,14 +237,15 @@ def reconnect_saved():
     rebuilt = {}
     for node, data in list(_STATE.items()):
         if not cmds.objExists(node):
-            warnings.append('%s：对象不存在' % node)
+            warnings.append('%s：对象不存在' % display_node(node))
             continue
         for old_name, constraint in data.get('constraints', {}).items():
             if old_name not in rebuilt:
                 try:
                     rebuilt[old_name] = _rebuild_constraint(constraint, node)
                 except Exception as exc:
-                    warnings.append('%s：约束重建失败：%s' % (old_name, exc))
+                    warnings.append('%s：约束重建失败：%s' %
+                                    (display_node(old_name), exc))
                     rebuilt[old_name] = None
 
         expected = []
@@ -254,18 +257,20 @@ def reconnect_saved():
                     expected.append((new_node + '.' + source_attr, destination))
                 continue
             if not cmds.objExists(source_node):
-                warnings.append('%s：源属性不存在' % source)
+                warnings.append('%s：源属性不存在' % display_plug(source))
                 continue
             expected.append((source, destination))
             if not cmds.isConnected(source, destination):
                 try:
                     cmds.connectAttr(source, destination, force=True)
                 except Exception as exc:
-                    warnings.append('%s -> %s：%s' % (source, destination, exc))
+                    warnings.append('%s -> %s：%s' %
+                                    (display_plug(source), display_plug(destination), exc))
         missing = [(source, destination) for source, destination in expected
                    if not cmds.isConnected(source, destination)]
         if missing:
-            warnings.append('%s：有 %d 条连接未能恢复' % (node, len(missing)))
+            warnings.append('%s：有 %d 条连接未能恢复' %
+                            (display_node(node), len(missing)))
         else:
             restored.append(node)
     if not warnings:

@@ -8,6 +8,8 @@ try:
 except ImportError:
     cmds = om2 = None
 
+from ..compat.maya_compat import display_node
+
 
 # Strict tolerances: retain Maya floating-point noise protection while making
 # transform screening and constraint pose validation more precise.
@@ -155,7 +157,8 @@ def _rotation_to_joint_orient(node):
         # connection remains intact and no disconnectAttr is used.
         for constraint in constraints:
             if not cmds.attributeQuery('nodeState', node=constraint, exists=True):
-                raise RuntimeError('%s 没有可用的 nodeState，已跳过' % constraint)
+                raise RuntimeError('%s 没有可用的 nodeState，已跳过' %
+                                   display_node(constraint))
             targets = _constraint_targets(constraint)
             if len(targets) != 1:
                 raise RuntimeError('%s 暂只支持单目标约束' % constraint)
@@ -240,7 +243,8 @@ def find_non_default_transforms(targets=None, translate=True, rotate=True,
                                (_format_transform_values(scale_value, tolerance),))
         if non_default:
             offenders.append(node)
-            details.append('%s：%s' % (node, ', '.join(non_default)))
+            details.append('%s：%s' %
+                           (display_node(node), ', '.join(non_default)))
     cmds.select(offenders, replace=True)
     return offenders, details
 
@@ -265,7 +269,7 @@ def cleanup_attributes(targets=None, translate=True, rotate=True, scale=True,
                 # other incoming rotate connections are rejected by the core.
                 _rotation_to_joint_orient(node)
             except Exception as exc:
-                warnings.append('%s：%s' % (node, exc))
+                warnings.append('%s：%s' % (display_node(node), exc))
                 continue
         elif rotate:
             _set_double3(node, 'rotate', (0.0, 0.0, 0.0))

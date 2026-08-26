@@ -61,6 +61,8 @@ try:
 except ImportError:
     cmds = om = None
 
+from ..compat.maya_compat import display_node
+
 # 镜像平面 -> 被取负的轴向分量索引 (0=X, 1=Y, 2=Z)
 _PLANE_AXIS = {'YZ': 0, 'XZ': 1, 'XY': 2}
 
@@ -370,7 +372,8 @@ def mirror_joints(roots, plane='YZ', behavior=True,
     for src in sources:
         dst_name = _mirror_name(src, search, replace)
         if dst_name is None:
-            warnings.append('跳过（命名中找不到 "%s"）: %s' % (search, src))
+            warnings.append('跳过（命名中找不到 "%s"）: %s' %
+                            (search, display_node(src)))
             continue
 
         src_parent = cmds.listRelatives(src, parent=True, fullPath=True) or []
@@ -392,7 +395,8 @@ def mirror_joints(roots, plane='YZ', behavior=True,
             # only the mirrored chain root receives a numeric suffix.
         dst = cmds.createNode('joint', name=unique_name, parent=create_parent)
         if is_chain_root and unique_name != dst_name:
-            warnings.append('目标根骨骼已存在，已创建为: %s' % unique_name)
+            warnings.append('目标根骨骼已存在，已创建为: %s' %
+                            display_node(unique_name))
         _copy_joint_attributes(src, dst)
         mapping[src] = dst
 

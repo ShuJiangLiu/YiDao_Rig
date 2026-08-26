@@ -15,6 +15,8 @@ except ImportError:
     cmds = None
     om2 = oma2 = None
 
+from ..compat.maya_compat import display_node
+
 
 def _selected_meshes():
     meshes = []
@@ -153,7 +155,7 @@ def export_weights(path, meshes=None):
     for mesh in meshes:
         cluster = _skin_cluster(mesh)
         if not cluster:
-            raise RuntimeError('网格没有 skinCluster：%s' % mesh)
+            raise RuntimeError('网格没有 skinCluster：%s' % display_node(mesh))
         record = _skin_data(mesh, cluster)
         base = _safe_file_name(record['mesh']) or 'mesh'
         filename = base + '.json'
@@ -178,8 +180,8 @@ def _resolve_mesh(record):
     if len(matches) == 1:
         return matches[0]
     if not matches:
-        raise RuntimeError('找不到目标网格：%s' % record.get('mesh'))
-    raise RuntimeError('目标网格名称不唯一：%s' % record.get('mesh'))
+        raise RuntimeError('找不到目标网格：%s' % display_node(record.get('mesh')))
+    raise RuntimeError('目标网格名称不唯一：%s' % display_node(record.get('mesh')))
 
 
 def _scene_joint_candidates(name):
@@ -208,6 +210,9 @@ def _resolve_influences(names, cluster=None):
     for name in names:
         exact = [item for item in existing if item == name]
         candidates = exact or [item for item in existing if _short(item) == _short(name)]
+        if not candidates and cluster:
+            missing.append(name)
+            continue
         if not candidates:
             candidates = _scene_joint_candidates(name)
         if len(candidates) == 1:
@@ -216,9 +221,13 @@ def _resolve_influences(names, cluster=None):
             missing.append(name)
         else:
             raise RuntimeError('影响骨骼名称不唯一：%s（候选：%s）' %
-                               (name, ', '.join(candidates)))
+                               (display_node(name), ', '.join(
+                                   display_node(item) for item in candidates)))
     if missing:
-        raise RuntimeError('场景中找不到影响骨骼：%s' % ', '.join(missing))
+        if cluster:
+            raise RuntimeError('权重导入已拒绝：目标模型与 JSON 文件的影响骨骼不匹配。')
+        raise RuntimeError('场景中找不到影响骨骼：%s' % ', '.join(
+            display_node(item) for item in missing))
     return result
 
 
@@ -228,7 +237,7 @@ def _ensure_skin_cluster(mesh, stored_names, stored_cluster=None):
         return cluster, _resolve_influences(stored_names, cluster)
     influences = _resolve_influences(stored_names)
     if not influences:
-        raise RuntimeError('权重文件没有影响骨骼：%s' % mesh)
+        raise RuntimeError('权重文件没有影响骨骼：%s' % display_node(mesh))
     kwargs = dict(bindMethod=0, skinMethod=0, normalizeWeights=1,
                   toSelectedBones=True)
     # Preserve the exported skinCluster name when creating a missing cluster.
@@ -246,18 +255,51 @@ def _extra_influences(cluster, stored_names):
             if name not in stored_names and _short(name) not in stored_short]
 
 
+def _influence_lock_states(cluster, influences):
+    """Read lockWeights by physical influence index."""
+    states = []
+    for index, _influence in enumerate(influences):
+        plug = '%s.lockWeights[%d]' % (cluster, index)
+        try:
+            states.append(bool(cmds.getAttr(plug)))
+        except Exception:
+            states.append(False)
+    return states
+
+
+def _set_influence_lock_states(cluster, states):
+    """Restore lockWeights without changing the stored weight values."""
+    for index, locked in enumerate(states):
+        plug = '%s.lockWeights[%d]' % (cluster, index)
+        try:
+            cmds.setAttr(plug, bool(locked))
+        except Exception:
+            # Referenced or otherwise protected nodes may reject direct edits;
+            # keep the original import exception as the primary error.
+            pass
+
+
+def _unlock_influences(cluster, count):
+    for index in range(count):
+        try:
+            cmds.setAttr('%s.lockWeights[%d]' % (cluster, index), False)
+        except Exception:
+            pass
+
+
 def _set_skin_data(record):
     mesh = _resolve_mesh(record)
     vertex_count = om2.MFnMesh(_dag(mesh)).numVertices
     if vertex_count != int(record['vertexCount']):
         raise RuntimeError('顶点数量不一致：%s（文件 %s，场景 %s）' %
-                           (mesh, record['vertexCount'], vertex_count))
+                           (display_node(mesh), record['vertexCount'], vertex_count))
     signature = record.get('signature')
     if signature:
         current = _mesh_signature(mesh)
         for key in ('faceCount', 'edgeCount', 'topologyHash'):
             if str(current.get(key)) != str(signature.get(key)):
-                raise RuntimeError('网格拓扑不一致：%s（%s）' % (mesh, key))
+                raise RuntimeError('网格拓扑不一致：%s（%s）' %
+                                   (display_node(mesh), key))
     stored_names = record['influences']
     cluster, target_influences = _ensure_skin_cluster(
         mesh, stored_names, record.get('skinCluster'))
@@ -271,40 +313,50 @@ def _set_skin_data(record):
     weight_data = record['weights']
     if isinstance(weight_data, dict):
         if weight_data.get('encoding') != 'sparse':
-            raise RuntimeError('不支持的权重编码：%s' % mesh)
+            raise RuntimeError('不支持的权重编码：%s' % display_node(mesh))
         sparse_rows = weight_data.get('rows', [])
         if len(sparse_rows) != vertex_count:
-            raise RuntimeError('权重行数不一致：%s' % mesh)
+            raise RuntimeError('权重行数不一致：%s' % display_node(mesh))
         dense_rows = []
         for sparse_row in sparse_rows:
             row = [0.0] * len(stored_names)
             for pair in sparse_row:
                 if len(pair) != 2 or int(pair[0]) < 0 or int(pair[0]) >= len(row):
-                    raise RuntimeError('稀疏权重索引无效：%s' % mesh)
+                    raise RuntimeError('稀疏权重索引无效：%s' % display_node(mesh))
                 row[int(pair[0])] = float(pair[1])
             dense_rows.append(row)
     else:
         dense_rows = []
         for row in weight_data:
             if len(row) != len(stored_names):
-                raise RuntimeError('权重列数不一致：%s' % mesh)
+                raise RuntimeError('权重列数不一致：%s' % display_node(mesh))
             dense_rows.append(_weight_values(row))
     values = []
     for row in dense_rows:
         values.extend(row)
-    skin_fn.setWeights(_dag(mesh), component, indices, om2.MDoubleArray(values), False)
-    blend_weights = record.get('blendWeights') or []
-    if blend_weights:
-        if len(blend_weights) != vertex_count:
-            raise RuntimeError('blendWeights 数量不一致：%s' % mesh)
-        skin_fn.setBlendWeights(_dag(mesh), component,
-                                om2.MDoubleArray(_weight_values(blend_weights)))
+    original_lock_states = _influence_lock_states(cluster, all_existing)
+    _unlock_influences(cluster, len(all_existing))
+    try:
+        # Keep normalize=False deliberately: imported JSON values must remain
+        # unchanged rather than being redistributed by Maya.
+        skin_fn.setWeights(_dag(mesh), component, indices,
+                           om2.MDoubleArray(values), False)
+        blend_weights = record.get('blendWeights') or []
+        if blend_weights:
+            if len(blend_weights) != vertex_count:
+                raise RuntimeError('blendWeights 数量不一致：%s' % display_node(mesh))
+            skin_fn.setBlendWeights(_dag(mesh), component,
+                                    om2.MDoubleArray(_weight_values(blend_weights)))
+    finally:
+        _set_influence_lock_states(cluster, original_lock_states)
     return mesh, extra_influences
 
 
 def _read_weight_records(path):
     files = []
-    if os.path.isfile(path):
+    if isinstance(path, (list, tuple)):
+        files = [item for item in path if os.path.isfile(item)]
+    elif os.path.isfile(path):
         files = [path]
     elif os.path.isdir(path):
         files = [os.path.join(path, name) for name in os.listdir(path)
@@ -345,7 +397,8 @@ def import_weights(path, meshes=None):
             name = _short(mesh)
             matches = records_by_name.get(name, [])
             if len(matches) != 1:
-                raise RuntimeError('选择的网格在权重文件中无法唯一匹配：%s' % mesh)
+                raise RuntimeError('选择的网格在权重文件中无法唯一匹配：%s' %
+                                   display_node(mesh))
             record = dict(matches[0])
             record['meshPath'] = mesh
             selected_records.append(record)
@@ -359,13 +412,19 @@ def import_weights(path, meshes=None):
         cluster = _skin_cluster(mesh)
         if not cluster:
             continue
+        try:
+            _resolve_influences(record.get('influences', []), cluster)
+        except RuntimeError as exc:
+            extra_errors.append('%s：%s' % (display_node(mesh), exc))
+            continue
         extras = _extra_influences(cluster, record.get('influences', []))
         if extras:
-            extra_errors.append('%s：目标 skinCluster 存在额外影响骨骼：%s' %
-                                (mesh, ', '.join(extras)))
+            extra_errors.append(
+                '%s：目标 skinCluster 存在 JSON 未包含的额外影响骨骼：%s' %
+                (display_node(mesh), ', '.join(display_node(item)
+                                                for item in extras)))
     if extra_errors:
-        raise RuntimeError('权重导入已拒绝：发现额外影响骨骼。\n' +
-                           '\n'.join(extra_errors))
+        raise RuntimeError('权重导入已拒绝：目标模型与 JSON 文件的影响骨骼不匹配。')
 
     changed = []
     for record in records:
