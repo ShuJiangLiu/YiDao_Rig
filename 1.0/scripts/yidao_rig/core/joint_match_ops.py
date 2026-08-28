@@ -14,9 +14,14 @@ def _short(node):
     return node.split('|')[-1]
 
 
+def _base_name(node):
+    """Return the short node name without its namespace."""
+    return _short(node).rsplit(':', 1)[-1]
+
+
 def _match_name(node):
-    """Matching uses identical short names; namespaces select the target."""
-    return _short(node)
+    """Matching uses identical names after namespaces are removed."""
+    return _base_name(node)
 
 
 def _hierarchy(root):
@@ -124,15 +129,15 @@ def match_joints(roots, hierarchy=True, translation=True, rotation=True,
 
 
 def _relative_joint_map(root):
-    """Map a joint hierarchy by relative child-index path."""
+    """Map a joint hierarchy by relative names without namespaces."""
     result = {}
 
     def visit(node, path):
         result[path] = node
         children = cmds.listRelatives(node, children=True, type='joint',
                                       fullPath=True) or []
-        for index, child in enumerate(children):
-            visit(child, path + (index,))
+        for child in children:
+            visit(child, path + (_base_name(child),))
     visit(root, ())
     return result
 
@@ -141,8 +146,8 @@ def match_joint_roots(source_root, target_root, hierarchy=True,
                       translation=True, rotation=True, scale=False):
     """Match an explicitly loaded source root to an explicitly loaded target root.
 
-    The two hierarchies are paired by identical short joint names and relative
-    child paths. Explicit roots make referenced namespaces unambiguous.
+    The two hierarchies are paired by relative joint-name paths after removing
+    namespaces. Explicit roots make referenced namespaces unambiguous.
     """
     if not cmds:
         raise RuntimeError('该工具必须在 Maya 中运行。')
@@ -165,7 +170,7 @@ def match_joint_roots(source_root, target_root, hierarchy=True,
         if not target:
             warnings.append('目标缺少对应层级: %s' % ('/'.join(map(str, path)) or '<root>'))
             continue
-        if _short(source) != _short(target):
+        if _base_name(source) != _base_name(target):
             warnings.append('名称不一致，跳过: %s → %s' %
                             (display_node(source), display_node(target)))
             continue
@@ -175,6 +180,48 @@ def match_joint_roots(source_root, target_root, hierarchy=True,
         except Exception as exc:
             warnings.append('%s → %s：%s' %
                             (display_node(source), display_node(target), exc))
+    return matched, warnings
+
+
+def match_joint_root_sets(source_roots, target_roots, hierarchy=True,
+                          translation=True, rotation=True, scale=False):
+    """Match loaded root sets by short name after removing namespaces."""
+    if not source_roots or not target_roots:
+        raise RuntimeError('请分别加载源骨骼和目标骨骼。')
+
+    targets_by_name = {}
+    for target in target_roots:
+        targets_by_name.setdefault(_base_name(target), []).append(target)
+    sources_by_name = {}
+    for source in source_roots:
+        sources_by_name.setdefault(_base_name(source), []).append(source)
+
+    matched, warnings = [], []
+    for source in source_roots:
+        source_name = _base_name(source)
+        source_candidates = sources_by_name[source_name]
+        if len(source_candidates) > 1:
+            if source == source_candidates[0]:
+                warnings.append(
+                    '源名称不唯一，跳过：%s（候选：%s）' %
+                    (source_name, ', '.join(display_node(item)
+                                            for item in source_candidates)))
+            continue
+        candidates = targets_by_name.get(source_name, [])
+        if not candidates:
+            warnings.append('找不到同名目标骨骼：%s' % display_node(source))
+            continue
+        if len(candidates) > 1:
+            warnings.append(
+                '目标名称不唯一，跳过：%s（候选：%s）' %
+                (source_name, ', '.join(display_node(item)
+                                        for item in candidates)))
+            continue
+        current_matched, current_warnings = match_joint_roots(
+            source, candidates[0], hierarchy=hierarchy,
+            translation=translation, rotation=rotation, scale=scale)
+        matched.extend(current_matched)
+        warnings.extend(current_warnings)
     return matched, warnings
 
 

@@ -6,8 +6,8 @@ from ..compat.qt_compat import (
     QtCore, QtWidgets, QT_WINDOW, QT_WINDOW_SYSTEM_MENU, QT_WINDOW_CLOSE,
     QT_WINDOW_MINIMIZE, QT_WINDOW_MAXIMIZE, QT_DELETE_ON_CLOSE,
 )
-from ..compat.maya_compat import cmds, maya_main_window
-from ..core.joint_match_ops import match_joint_roots, undo_chunk
+from ..compat.maya_compat import cmds, display_node, maya_main_window
+from ..core.joint_match_ops import match_joint_root_sets, undo_chunk
 from ..core.ui_state import setup_state
 
 WINDOW_OBJECT = 'yidaoJointMatchWindow'
@@ -40,14 +40,16 @@ if QtWidgets:
             root.setContentsMargins(10, 10, 10, 10)
             root.setSpacing(8)
             info = QtWidgets.QLabel(
-                '左侧加载源骨骼，右侧加载目标骨骼。工具通过相同骨骼名称和层级进行匹配，\n'
-                '目标可以来自引用文件并带有命名空间。')
+                '左侧加载源骨骼，右侧加载目标骨骼。源和目标均可加载多个，\n'
+                '工具去除命名空间后，通过相同骨骼名称和层级进行匹配。')
             info.setWordWrap(True)
             root.addWidget(info)
 
             columns = QtWidgets.QHBoxLayout()
-            self.source_list, source_box = self._make_column('源骨骼（无命名空间）')
-            self.target_list, target_box = self._make_column('目标骨骼（可带命名空间）')
+            self.source_list, source_box = self._make_column(
+                '源骨骼（可多选）', role_name='源骨骼')
+            self.target_list, target_box = self._make_column(
+                '目标骨骼（可多选）', role_name='目标骨骼')
             columns.addWidget(source_box)
             columns.addWidget(target_box)
             root.addLayout(columns)
@@ -81,14 +83,15 @@ if QtWidgets:
             self.status.setStyleSheet('QLabel#statusLabel { color: #ffffff; padding: 3px 2px; } QLabel#statusLabel[error="true"] { color: #ff4d4d; }')
             root.addWidget(self.status)
 
-        def _make_column(self, title):
+        def _make_column(self, title, role_name):
             box = QtWidgets.QGroupBox(title)
             layout = QtWidgets.QVBoxLayout(box)
             listing = QtWidgets.QListWidget()
-            listing.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+            listing.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
             add = QtWidgets.QPushButton('从当前选择加载')
             clear = QtWidgets.QPushButton('清除')
-            add.clicked.connect(lambda: self._load_current(listing))
+            add.clicked.connect(
+                lambda: self._load_current(listing, role_name))
             clear.clicked.connect(listing.clear)
             layout.addWidget(listing)
             buttons = QtWidgets.QHBoxLayout()
@@ -97,22 +100,35 @@ if QtWidgets:
             layout.addLayout(buttons)
             return listing, box
 
-        def _load_current(self, listing):
+        def _load_current(self, listing, role_name):
             selection = cmds.ls(selection=True, type='joint', long=True) or []
             if not selection:
-                self._set_status('失败：请先在 Maya 中选择一根骨骼作为骨骼链根', error=True)
+                self._set_status(
+                    '失败：请先在 Maya 中选择骨骼作为骨骼链根', error=True)
                 return
             listing.clear()
-            root = selection[0]
-            item = QtWidgets.QListWidgetItem(root)
-            item.setData(QtCore.Qt.UserRole, root)
-            listing.addItem(item)
+            roots = selection
+            for root in roots:
+                # Keep the full DAG path as internal data. Display a short
+                # name when unique, otherwise the full DAG path.
+                item = QtWidgets.QListWidgetItem(display_node(root))
+                item.setData(QtCore.Qt.UserRole, root)
+                listing.addItem(item)
             listing.setCurrentRow(0)
-            self.status.setText('已加载：' + root)
+            if len(roots) == 1:
+                message = '已加载：' + display_node(roots[0])
+            else:
+                message = '已加载 %d 个%s' % (len(roots), role_name)
+            self._set_status(message, error=False)
 
-        def _loaded_root(self, listing):
-            item = listing.currentItem()
-            return item.data(QtCore.Qt.UserRole) if item else None
+        def _loaded_roots(self, listing):
+            roots = []
+            for index in range(listing.count()):
+                item = listing.item(index)
+                root = item.data(QtCore.Qt.UserRole)
+                if root:
+                    roots.append(root)
+            return roots
 
         def _set_status(self, text, error=False):
             self.status.setProperty('error', 'true' if error else 'false')
@@ -121,12 +137,12 @@ if QtWidgets:
             self.status.setText(text)
 
         def _match(self):
-            source = self._loaded_root(self.source_list)
-            target = self._loaded_root(self.target_list)
+            sources = self._loaded_roots(self.source_list)
+            targets = self._loaded_roots(self.target_list)
             try:
                 with undo_chunk('YiDao Joint Match'):
-                    matched, warnings = match_joint_roots(
-                        source, target,
+                    matched, warnings = match_joint_root_sets(
+                        sources, targets,
                         hierarchy=self.hierarchy_check.isChecked(),
                         translation=self.translation_check.isChecked(),
                         rotation=self.rotation_check.isChecked(),

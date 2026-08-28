@@ -84,28 +84,20 @@ if QtWidgets:
             chain_group = QtWidgets.QGroupBox('层级链顺序命名')
             chain_layout = QtWidgets.QGridLayout(chain_group)
             chain_layout.setContentsMargins(8, 6, 8, 6)
-            chain_layout.addWidget(QtWidgets.QLabel('基础名称'), 0, 0)
+            chain_layout.addWidget(QtWidgets.QLabel('命名格式'), 0, 0)
             self.base_edit = QtWidgets.QLineEdit()
-            self.base_edit.setPlaceholderText('留空使用根骨骼名称')
+            self.base_edit.setPlaceholderText('例如：arm__????')
             chain_layout.addWidget(self.base_edit, 0, 1, 1, 3)
-            chain_layout.addWidget(QtWidgets.QLabel('分隔符'), 1, 0)
-            self.separator_edit = QtWidgets.QLineEdit('_')
-            self.separator_edit.setMaximumWidth(70)
-            chain_layout.addWidget(self.separator_edit, 1, 1)
-            chain_layout.addWidget(QtWidgets.QLabel('起始编号'), 1, 2)
+            chain_layout.addWidget(QtWidgets.QLabel('起始编号'), 1, 0)
             self.start_spin = QtWidgets.QSpinBox()
             self.start_spin.setRange(0, 9999)
             self.start_spin.setValue(0)
-            chain_layout.addWidget(self.start_spin, 1, 3)
-            chain_layout.addWidget(QtWidgets.QLabel('编号位数'), 2, 0)
-            self.digits_spin = QtWidgets.QSpinBox()
-            self.digits_spin.setRange(1, 8)
-            self.digits_spin.setValue(2)
-            chain_layout.addWidget(self.digits_spin, 2, 1)
+            chain_layout.addWidget(self.start_spin, 1, 1)
             chain_hint = QtWidgets.QLabel(
-                '支持骨骼、控制器组等任意 Transform 层级。示例：arm_00、arm_01、arm_02……')
+                '? 的数量决定编号位数。示例 arm__???? → arm__0000、arm__0001、arm__0002……')
             chain_hint.setObjectName('hintLabel')
-            chain_layout.addWidget(chain_hint, 2, 2, 1, 2)
+            chain_hint.setWordWrap(True)
+            chain_layout.addWidget(chain_hint, 2, 0, 1, 4)
             chain_button = QtWidgets.QPushButton('重命名所选层级链')
             chain_button.setMinimumHeight(36)
             chain_button.clicked.connect(self._rename_chain)
@@ -145,10 +137,8 @@ if QtWidgets:
                         self.base_edit.setText(base)
                 with undo_chunk('YiDao Naming Hierarchy Chain'):
                     renamed = rename_hierarchy_chain(
-                        base_name=base,
-                        separator=self.separator_edit.text(),
+                        template=base,
                         start_index=self.start_spin.value(),
-                        digits=self.digits_spin.value(),
                         include_children=self.hierarchy_check.isChecked())
                 self._set_status('完成：按父子顺序重命名 %d 个层级节点' % len(renamed))
             except Exception as exc:

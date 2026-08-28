@@ -8,6 +8,7 @@ from ..compat.qt_compat import (
 )
 from ..compat.maya_compat import cmds, maya_main_window
 from ..core.skin_weight_ops import export_weights, import_weights, undo_chunk, _selected_meshes
+from ..core.ui_state import setup_state
 
 WINDOW_OBJECT = 'yidaoSkinWeightWindow'
 _STYLE = '''
@@ -29,6 +30,7 @@ if QtWidgets:
             self.setMinimumSize(620, 210)
             self.setStyleSheet(_STYLE)
             self._build_ui()
+            self._save_ui_state = setup_state(self, 'skin_weight')
 
         def _build_ui(self):
             root = QtWidgets.QVBoxLayout(self)

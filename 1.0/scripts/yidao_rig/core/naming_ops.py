@@ -2,6 +2,8 @@
 """Naming operations for selected Maya transforms and joint chains."""
 from __future__ import print_function
 
+import re
+
 try:
     import maya.cmds as cmds
 except ImportError:
@@ -105,8 +107,18 @@ def _default_chain_base(root):
     return local
 
 
-def rename_hierarchy_chain(base_name='', separator='_', start_index=0,
-                           digits=2, include_children=False, root=None):
+def _parse_chain_template(template):
+    """Split a chain naming template into prefix, placeholder and suffix."""
+    template = str(template).strip()
+    matches = list(re.finditer(r'\?+', template))
+    if len(matches) != 1:
+        raise RuntimeError('命名格式必须包含一段连续的 ? 作为编号占位符。')
+    match = matches[0]
+    return template[:match.start()], len(match.group(0)), template[match.end():]
+
+
+def rename_hierarchy_chain(template='', start_index=0,
+                           include_children=False, root=None):
     """Rename a selected transform hierarchy from parent to child order."""
     if not cmds:
         raise RuntimeError('该工具必须在 Maya 中运行。')
@@ -125,17 +137,18 @@ def rename_hierarchy_chain(base_name='', separator='_', start_index=0,
         nodes += _descendants(root)
     nodes = list(dict.fromkeys(nodes))
     nodes.sort(key=_depth)
-    base_name = str(base_name).strip() or _default_chain_base(root)
-    separator = str(separator)
+    template = str(template).strip()
+    if not template:
+        template = _default_chain_base(root) + '__??'
+    prefix, digits, suffix = _parse_chain_template(template)
     try:
         start_index = int(start_index)
-        digits = max(1, int(digits))
     except (TypeError, ValueError):
-        raise RuntimeError('起始编号和位数必须是整数。')
+        raise RuntimeError('起始编号必须是整数。')
     final_names = {}
     for offset, node in enumerate(nodes):
         number = str(start_index + offset).zfill(digits)
-        final_names[node] = base_name + separator + number
+        final_names[node] = prefix + number + suffix
     return _rename_with_temporary_names(nodes, final_names)
 
 
@@ -145,7 +158,7 @@ def chain_base_from_selection():
                 if cmds.nodeType(node) in ('transform', 'joint')]
     if not selected:
         return ''
-    return _default_chain_base(selected[0])
+    return _default_chain_base(selected[0]) + '__??'
 
 
 # Backward-compatible alias for scripts that used the earlier name.

@@ -5,6 +5,11 @@ from __future__ import print_function
 import os
 
 try:
+    import maya.cmds as cmds
+except ImportError:
+    cmds = None
+
+try:
     from ..compat.qt_compat import QtCore, QtWidgets
 except ImportError:
     QtCore = QtWidgets = None
@@ -102,8 +107,50 @@ def save_state(window, tool_key):
     settings.sync()
 
 
+def setup_empty_selection_status(window):
+    """Clear a tool's status label when Maya's scene selection is empty."""
+    if not cmds or not QtWidgets:
+        return None
+    status = window.findChild(QtWidgets.QLabel, 'statusLabel')
+    if status is None:
+        return None
+
+    job = {'id': None}
+
+    def clear_if_empty(*args):
+        try:
+            if cmds.ls(selection=True):
+                return
+            status.setProperty('error', 'false')
+            status.style().unpolish(status)
+            status.style().polish(status)
+            status.clear()
+        except Exception:
+            pass
+
+    def cleanup(*args):
+        job_id = job['id']
+        if job_id is None:
+            return
+        try:
+            if cmds.scriptJob(exists=job_id):
+                cmds.scriptJob(kill=job_id, force=True)
+        except Exception:
+            pass
+        job['id'] = None
+
+    try:
+        job['id'] = cmds.scriptJob(
+            event=['SelectionChanged', clear_if_empty], protected=True)
+        window.destroyed.connect(cleanup)
+    except Exception:
+        cleanup()
+    return cleanup
+
+
 def setup_state(window, tool_key):
     restore_state(window, tool_key)
+    clear_status_job = setup_empty_selection_status(window)
 
     def save(*args):
         save_state(window, tool_key)
@@ -115,4 +162,5 @@ def setup_state(window, tool_key):
                     signal.connect(save)
                 except Exception:
                     pass
+    save.clear_status_job = clear_status_job
     return save
