@@ -58,7 +58,8 @@ if QtWidgets:
             self.hierarchy_check.setChecked(False)
             scope_layout.addWidget(self.hierarchy_check)
             scope_hint = QtWidgets.QLabel(
-                '关闭：只处理当前选择；开启：查找替换和层级链命名都会处理子层级。')
+                '关闭：只处理当前选择；开启：查找替换和层级链命名都会处理子层级。\n'
+                '层级链命名支持同时选择多个根对象，编号会连续递增。')
             scope_hint.setObjectName('hintLabel')
             scope_hint.setWordWrap(True)
             scope_layout.addWidget(scope_hint)

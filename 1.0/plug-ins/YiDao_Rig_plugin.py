@@ -72,6 +72,11 @@ def _show_select_weight_joints(*args):
     yidao_rig.show_select_weight_joints()
 
 
+def _show_bind_pose_tool(*args):
+    import yidao_rig
+    yidao_rig.show_bind_pose_tool()
+
+
 def _show_naming(*args):
     import yidao_rig
     yidao_rig.show_naming()
@@ -108,6 +113,8 @@ def initializePlugin(mobject):
                   command=_show_skin_weight_tool)
     cmds.menuItem(label='Select Weight Joints', parent=skin_menu,
                   command=_show_select_weight_joints)
+    cmds.menuItem(label='Bind Pose Cleanup', parent=skin_menu,
+                  command=_show_bind_pose_tool)
     naming_menu = cmds.menuItem(label='Naming', parent=tools_menu,
                                 subMenu=True, tearOff=True)
     cmds.menuItem(label='Naming Tool', parent=naming_menu,

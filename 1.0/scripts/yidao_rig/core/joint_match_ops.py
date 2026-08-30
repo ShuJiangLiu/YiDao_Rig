@@ -183,7 +183,7 @@ def match_joint_roots(source_root, target_root, hierarchy=True,
     return matched, warnings
 
 
-def match_joint_root_sets(source_roots, target_roots, hierarchy=True,
+def match_joint_root_sets(source_roots, target_roots, hierarchy=False,
                           translation=True, rotation=True, scale=False):
     """Match loaded root sets by short name after removing namespaces."""
     if not source_roots or not target_roots:

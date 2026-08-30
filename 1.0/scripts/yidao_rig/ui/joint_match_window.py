@@ -30,7 +30,7 @@ if QtWidgets:
             super().__init__(parent)
             self.setObjectName(WINDOW_OBJECT)
             self.setWindowTitle('Joint Match')
-            self.setMinimumSize(700, 520)
+            self.setMinimumSize(700, 430)
             self.setStyleSheet(_STYLE)
             self._build_ui()
             self._save_ui_state = setup_state(self, 'joint_match')
@@ -40,8 +40,8 @@ if QtWidgets:
             root.setContentsMargins(10, 10, 10, 10)
             root.setSpacing(8)
             info = QtWidgets.QLabel(
-                '左侧加载源骨骼，右侧加载目标骨骼。源和目标均可加载多个，\n'
-                '工具去除命名空间后，通过相同骨骼名称和层级进行匹配。')
+                '左侧加载源骨骼，右侧加载目标骨骼。源和目标均可加载多个。\n'
+                '工具只匹配当前加载的骨骼，并在去除命名空间后按名称匹配。')
             info.setWordWrap(True)
             root.addWidget(info)
 
@@ -53,13 +53,6 @@ if QtWidgets:
             columns.addWidget(source_box)
             columns.addWidget(target_box)
             root.addLayout(columns)
-
-            mode = QtWidgets.QGroupBox('匹配范围')
-            mode_layout = QtWidgets.QVBoxLayout(mode)
-            self.hierarchy_check = QtWidgets.QCheckBox('匹配整条骨骼链（包含子骨骼）')
-            self.hierarchy_check.setChecked(True)
-            mode_layout.addWidget(self.hierarchy_check)
-            root.addWidget(mode)
 
             attrs = QtWidgets.QGroupBox('匹配属性')
             attrs_layout = QtWidgets.QHBoxLayout(attrs)
@@ -74,7 +67,7 @@ if QtWidgets:
             attrs_layout.addStretch()
             root.addWidget(attrs)
 
-            button = QtWidgets.QPushButton('匹配骨骼链')
+            button = QtWidgets.QPushButton('匹配所选骨骼')
             button.setMinimumHeight(38)
             button.clicked.connect(self._match)
             root.addWidget(button)
@@ -104,7 +97,7 @@ if QtWidgets:
             selection = cmds.ls(selection=True, type='joint', long=True) or []
             if not selection:
                 self._set_status(
-                    '失败：请先在 Maya 中选择骨骼作为骨骼链根', error=True)
+                    '失败：请先在 Maya 中选择骨骼', error=True)
                 return
             listing.clear()
             roots = selection
@@ -143,13 +136,13 @@ if QtWidgets:
                 with undo_chunk('YiDao Joint Match'):
                     matched, warnings = match_joint_root_sets(
                         sources, targets,
-                        hierarchy=self.hierarchy_check.isChecked(),
+                        hierarchy=False,
                         translation=self.translation_check.isChecked(),
                         rotation=self.rotation_check.isChecked(),
                         scale=self.scale_check.isChecked())
                 for warning in warnings:
                     cmds.warning(warning)
-                self._set_status('完成：匹配 %d 根，警告 %d 条' %
+                self._set_status('完成：匹配 %d 个骨骼，警告 %d 条' %
                                  (len(matched), len(warnings)), error=bool(warnings))
             except Exception as exc:
                 self._set_status('失败：' + str(exc), error=True)

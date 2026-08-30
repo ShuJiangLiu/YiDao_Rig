@@ -119,27 +119,33 @@ def _parse_chain_template(template):
 
 def rename_hierarchy_chain(template='', start_index=0,
                            include_children=False, root=None):
-    """Rename a selected transform hierarchy from parent to child order."""
+    """Rename selected transform hierarchies from parent to child order."""
     if not cmds:
         raise RuntimeError('该工具必须在 Maya 中运行。')
     if root is None:
-        selected = [node for node in
-                    (cmds.ls(selection=True, long=True) or [])
-                    if cmds.nodeType(node) in ('transform', 'joint')]
-        if not selected:
+        roots = [node for node in
+                 (cmds.ls(selection=True, long=True) or [])
+                 if cmds.nodeType(node) in ('transform', 'joint')]
+        if not roots:
             raise RuntimeError('请先选择层级链的根节点。')
-        root = selected[0]
-    if cmds.nodeType(root) not in ('transform', 'joint'):
-        raise RuntimeError('选择的对象不是可重命名的层级节点：%s' %
-                           display_node(root))
-    nodes = [root]
-    if include_children:
-        nodes += _descendants(root)
+    elif isinstance(root, (list, tuple)):
+        roots = list(root)
+    else:
+        roots = [root]
+    for item in roots:
+        if cmds.nodeType(item) not in ('transform', 'joint'):
+            raise RuntimeError('选择的对象不是可重命名的层级节点：%s' %
+                               display_node(item))
+    nodes = []
+    for item in roots:
+        nodes.append(item)
+        if include_children:
+            nodes += _descendants(item)
     nodes = list(dict.fromkeys(nodes))
     nodes.sort(key=_depth)
     template = str(template).strip()
     if not template:
-        template = _default_chain_base(root) + '__??'
+        template = _default_chain_base(roots[0]) + '__??'
     prefix, digits, suffix = _parse_chain_template(template)
     try:
         start_index = int(start_index)
