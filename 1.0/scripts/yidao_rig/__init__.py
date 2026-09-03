@@ -39,6 +39,11 @@ def show_select_weight_joints():
     return select_weight_joints_tool.run()
 
 
+def show_select_weighted_models():
+    from .tools import select_weighted_models_tool
+    return select_weighted_models_tool.run()
+
+
 def show_bind_pose_tool():
     from .tools import bind_pose_tool
     return bind_pose_tool.run()

@@ -94,17 +94,12 @@ def _pose_matrix_signature(pose):
         members = [
             (cmds.ls(member, long=True) or [member])[0]
             for member in members]
-        matrices = cmds.dagPose(
-            pose, query=True, worldMatrix=True) or []
+        indices = cmds.getAttr(
+            pose + '.worldMatrix', multiIndices=True) or []
+        matrices = [cmds.getAttr(
+            '%s.worldMatrix[%d]' % (pose, index)) for index in indices]
     except Exception:
-        try:
-            members = cmds.dagPose(pose, query=True, members=True) or []
-            members = [
-                (cmds.ls(member, long=True) or [member])[0]
-                for member in members]
-            matrices = cmds.getAttr(pose + '.worldMatrix') or []
-        except Exception:
-            return None
+        return None
     if members and matrices and not isinstance(matrices[0], (list, tuple)):
         if len(matrices) == len(members) * 16:
             matrices = [matrices[index:index + 16]
