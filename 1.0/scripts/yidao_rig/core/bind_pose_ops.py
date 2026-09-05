@@ -181,15 +181,22 @@ def _rewire_pose_skin_connections(old_pose, new_pose):
 
 
 def merge_identical_bind_poses():
-    """Merge active poses from one skeleton while preserving bind data."""
+    """Merge active poses from one skeleton while preserving bind data.
+
+    Maya's ``dagPose.worldMatrix`` multi attribute cannot be read reliably in
+    every Maya version.  Instead, require every pose to report ``atPose``.
+    That query is Maya's own validation that each stored member matrix matches
+    the current scene.  The missing members can then be added to one pose
+    without inventing or overwriting any stored bind values.
+    """
     info = inspect_bind_poses()
     groups = {}
     unreadable = []
     not_at_pose = []
     for pose in info['used']:
         key = _pose_skeleton_key(pose)
-        signature = _pose_matrix_signature(pose)
-        if key is None or signature is None:
+        members, members_known = _pose_members(pose)
+        if key is None or not members_known:
             unreadable.append(pose)
             continue
         at_pose, known = _is_at_pose(pose)
@@ -199,17 +206,18 @@ def merge_identical_bind_poses():
         if not at_pose:
             not_at_pose.append(pose)
             continue
-        groups.setdefault(key, []).append((pose, dict(signature)))
+        groups.setdefault(key, []).append((pose, members))
 
     removed = []
     for entries in groups.values():
         if len(entries) < 2:
             continue
-        canonical, canonical_data = max(
+        canonical, canonical_members = max(
             entries, key=lambda item: len(item[1]))
+        canonical_data = set(canonical_members)
         all_members = set()
-        for _pose, data in entries:
-            all_members.update(data)
+        for _pose, members in entries:
+            all_members.update(members)
 
         # Every pose in this group has already been checked with atPose.
         # Therefore the current scene contains the correct stored values for
@@ -222,7 +230,7 @@ def merge_identical_bind_poses():
                 cmds.dagPose(
                     addToPose=True, selection=True, name=canonical)
             except Exception:
-                unreadable.extend(pose for pose, _data in entries)
+                unreadable.extend(pose for pose, _members in entries)
                 continue
             finally:
                 if previous_selection:
@@ -230,7 +238,7 @@ def merge_identical_bind_poses():
                 else:
                     cmds.select(clear=True)
 
-        for duplicate, _duplicate_data in entries:
+        for duplicate, _duplicate_members in entries:
             if duplicate == canonical:
                 continue
             if not _rewire_pose_skin_connections(duplicate, canonical):

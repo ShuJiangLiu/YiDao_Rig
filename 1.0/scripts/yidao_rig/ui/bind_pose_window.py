@@ -8,8 +8,7 @@ from ..compat.qt_compat import (
 )
 from ..compat.maya_compat import maya_main_window
 from ..core.bind_pose_ops import (
-    cleanup_and_merge_bind_poses, cleanup_unused_bind_poses,
-    inspect_bind_poses, undo_chunk)
+    cleanup_and_merge_bind_poses, inspect_bind_poses, undo_chunk)
 from ..core.ui_state import setup_state
 
 WINDOW_OBJECT = 'yidaoBindPoseWindow'
@@ -33,7 +32,7 @@ if QtWidgets:
             super().__init__(parent)
             self.setObjectName(WINDOW_OBJECT)
             self.setWindowTitle('Bind Pose Cleanup')
-            self.setMinimumSize(500, 280)
+            self.setMinimumSize(500, 170)
             self.setStyleSheet(_STYLE)
             self._build_ui()
             self._save_ui_state = setup_state(self, 'bind_pose')
@@ -42,31 +41,16 @@ if QtWidgets:
             root = QtWidgets.QVBoxLayout(self)
             root.setContentsMargins(10, 10, 10, 10)
             root.setSpacing(8)
-            info = QtWidgets.QLabel(
-                '清理场景中可以确认未被当前 skinCluster 使用的 Bind Pose 节点。\n'
-                '“清理并合并”只处理骨骼成员兼容且共同矩阵一致的 Bind Pose。')
-            info.setWordWrap(True)
-            root.addWidget(info)
-
-            action_group = QtWidgets.QGroupBox('清理操作')
+            action_group = QtWidgets.QGroupBox('操作')
             action_layout = QtWidgets.QVBoxLayout(action_group)
             action_layout.setContentsMargins(8, 8, 8, 8)
             scan_button = QtWidgets.QPushButton('检查 Bind Pose')
-            cleanup_button = QtWidgets.QPushButton('清理无用 Bind Pose')
-            merge_button = QtWidgets.QPushButton('清理并合并相同 Bind Pose')
+            cleanup_button = QtWidgets.QPushButton('清理 Bind Pose')
             scan_button.clicked.connect(self._inspect)
             cleanup_button.clicked.connect(self._cleanup)
-            merge_button.clicked.connect(self._cleanup_and_merge)
             action_layout.addWidget(scan_button)
             action_layout.addWidget(cleanup_button)
-            action_layout.addWidget(merge_button)
             root.addWidget(action_group)
-
-            hint = QtWidgets.QLabel(
-                '如果清理后仍有多个有效 Bind Pose，说明它们可能分别服务于不同绑定关系。')
-            hint.setObjectName('hintLabel')
-            hint.setWordWrap(True)
-            root.addWidget(hint)
 
             self.status = QtWidgets.QLabel('就绪：可以检查场景中的 Bind Pose')
             self.status.setObjectName('statusLabel')
@@ -82,45 +66,27 @@ if QtWidgets:
             try:
                 info = inspect_bind_poses()
                 self._set_status(
-                    '检查完成：共 %d 个，使用中 %d 个，可清理 %d 个。' %
-                    (len(info['all']), len(info['used']), len(info['unused'])))
+                    '检查完成：共 %d 个 Bind Pose，其中 %d 个与当前 skinCluster 关联。' %
+                    (len(info['all']), len(info['used'])))
             except Exception as exc:
                 self._set_status('失败：' + str(exc), error=True)
 
         def _cleanup(self):
             try:
                 with undo_chunk('YiDao Bind Pose Cleanup'):
-                    result = cleanup_unused_bind_poses()
-                removed_count = len(result['removed'])
-                remaining_count = len(result['remaining'])
-                if remaining_count > 1:
-                    message = (
-                        '已清理 %d 个无用节点；仍保留 %d 个有效 Bind Pose，'
-                        '未强制合并。' % (removed_count, remaining_count))
-                else:
-                    message = (
-                        '完成：已清理 %d 个无用 Bind Pose，当前保留 %d 个。' %
-                        (removed_count, remaining_count))
-                self._set_status(message)
-            except Exception as exc:
-                self._set_status('失败：' + str(exc), error=True)
-
-        def _cleanup_and_merge(self):
-            try:
-                with undo_chunk('YiDao Bind Pose Cleanup and Merge'):
                     result = cleanup_and_merge_bind_poses()
-                removed_count = (len(result['removed_unused']) +
-                                 len(result['removed_duplicates']))
+                unused_count = len(result['removed_unused'])
+                merged_count = len(result['removed_duplicates'])
                 remaining_count = len(result['remaining'])
                 if remaining_count > 1:
                     message = (
-                        '已处理 %d 个节点；仍保留 %d 个 Bind Pose，'
-                        '因骨骼系统或绑定姿势不同未合并。' %
-                        (removed_count, remaining_count))
+                        '已清理 %d 个无用节点并合并 %d 个 Bind Pose；仍保留 %d 个，'
+                        '未满足安全合并条件。' %
+                        (unused_count, merged_count, remaining_count))
                 else:
                     message = (
-                        '完成：已清理并合并 %d 个节点，当前保留 %d 个 Bind Pose。' %
-                        (removed_count, remaining_count))
+                        '完成：已清理 %d 个无用节点并合并 %d 个 Bind Pose，当前保留 %d 个。' %
+                        (unused_count, merged_count, remaining_count))
                 if result['unreadable']:
                     message += ' 有 %d 个节点数据无法读取，已保留。' % len(result['unreadable'])
                 if result['not_at_pose']:

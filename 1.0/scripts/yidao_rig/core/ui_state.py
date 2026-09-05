@@ -18,6 +18,43 @@ _ORGANIZATION = 'YiDao Rig'
 _APPLICATION = 'YiDao Rig Tools'
 
 
+def _clear_status(status):
+    status.setProperty('error', 'false')
+    status.style().unpolish(status)
+    status.style().polish(status)
+    status.clear()
+
+
+if QtCore:
+    class _ViewportEmptyClickFilter(QtCore.QObject):
+        """Clear status after a user clicks empty space in a Maya viewport."""
+        def __init__(self, window, status):
+            super(_ViewportEmptyClickFilter, self).__init__(window)
+            self._window = window
+            self._status = status
+
+        def eventFilter(self, watched, event):
+            if event.type() != QtCore.QEvent.MouseButtonPress:
+                return False
+            # Selection changes after the mouse press has been delivered.
+            # Defer the check so clicks on an object do not look like blank
+            # clicks merely because the previous selection was empty.
+            QtCore.QTimer.singleShot(0, self._clear_after_viewport_click)
+            return False
+
+        def _clear_after_viewport_click(self):
+            try:
+                panel = cmds.getPanel(underPointer=True)
+                if not panel or cmds.getPanel(typeOf=panel) != 'modelPanel':
+                    return
+                if not cmds.ls(selection=True):
+                    _clear_status(self._status)
+            except Exception:
+                pass
+else:
+    _ViewportEmptyClickFilter = None
+
+
 def _settings_path():
     # ui_state.py: 1.0/scripts/yidao_rig/core/ui_state.py
     # Keep preferences inside the installed version so uninstalling the
@@ -108,40 +145,34 @@ def save_state(window, tool_key):
 
 
 def setup_empty_selection_status(window):
-    """Clear a tool's status label when Maya's scene selection is empty."""
+    """Clear a status label when the user clicks empty Maya viewport space.
+
+    This deliberately does not use Maya's SelectionChanged event: tools can
+    temporarily alter selection while running, which is not a user request to
+    dismiss the status message.
+    """
     if not cmds or not QtWidgets:
         return None
     status = window.findChild(QtWidgets.QLabel, 'statusLabel')
     if status is None:
         return None
 
-    job = {'id': None}
-
-    def clear_if_empty(*args):
-        try:
-            if cmds.ls(selection=True):
-                return
-            status.setProperty('error', 'false')
-            status.style().unpolish(status)
-            status.style().polish(status)
-            status.clear()
-        except Exception:
-            pass
+    click_filter = {'object': None}
 
     def cleanup(*args):
-        job_id = job['id']
-        if job_id is None:
-            return
-        try:
-            if cmds.scriptJob(exists=job_id):
-                cmds.scriptJob(kill=job_id, force=True)
-        except Exception:
-            pass
-        job['id'] = None
+        filter_object = click_filter['object']
+        if filter_object is not None:
+            try:
+                QtWidgets.QApplication.instance().removeEventFilter(filter_object)
+            except Exception:
+                pass
+            click_filter['object'] = None
 
     try:
-        job['id'] = cmds.scriptJob(
-            event=['SelectionChanged', clear_if_empty], protected=True)
+        if _ViewportEmptyClickFilter is not None:
+            filter_object = _ViewportEmptyClickFilter(window, status)
+            QtWidgets.QApplication.instance().installEventFilter(filter_object)
+            click_filter['object'] = filter_object
         window.destroyed.connect(cleanup)
     except Exception:
         cleanup()
